@@ -1,0 +1,25 @@
+{
+  "name": "b13/distributed-locks",
+  "description": "Adds a Redis Locking Strategy for TYPO3 frontend page generation, useful on distributed systems with NFS.",
+  "type": "typo3-cms-extension",
+  "keywords": ["TYPO3 CMS", "Redis", "Locking", "NFS"],
+  "license": "GPL-2.0-or-later",
+  "require": {
+    "php": "^7.0",
+	"ext-redis": "*",
+    "typo3/cms-core": ">=8.7.0,<10.0"
+  },
+  "replace": {
+    "distributed_locks": "self.version"
+  },
+  "extra": {
+    "typo3/cms": {
+      "extension-key": "distributed_locks"
+    }
+  },
+  "autoload": {
+    "psr-4": {
+      "B13\\DistributedLocks\\": "src/"
+    }
+  }
+}
