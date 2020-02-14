@@ -49,3 +49,7 @@ with some drawbacks:
 * Destroying an object did not remove locks, ending in certain dead lock scenarios in broken scripts
 
 Thanks to Alexander Miehe for the initial extension and the conceptual work.
+
+## Sharing our expertise
+
+[Find more TYPO3 extensions we have developed](https://b13.com/useful-typo3-extensions-from-b13-to-you) that help us deliver value in client projects. As part of the way we work, we focus on testing and best practices to ensure long-term performance, reliability, and results in all our code.
