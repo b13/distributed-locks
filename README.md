@@ -34,6 +34,7 @@ Other options:
     'ttl' (numeric, default is 30sec)
     'port' (numeric, default is 6379)
     'authentication' (contains the password, necessary for secure authentication if required by redis)
+    'priority' (numeric, default is 95) - Set priority for this locking strategy. See LockingApi documentation.
 
 ## Future Development
 
