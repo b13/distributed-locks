@@ -6,11 +6,8 @@
   "license": "GPL-2.0-or-later",
   "require": {
     "php": "^7.0",
-	"ext-redis": "*",
+    "ext-redis": "*",
     "typo3/cms-core": ">=8.7.0,<10.0"
-  },
-  "replace": {
-    "distributed_locks": "self.version"
   },
   "extra": {
     "typo3/cms": {
