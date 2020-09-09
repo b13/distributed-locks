@@ -135,7 +135,14 @@ class RedisLockingStrategy implements LockingStrategyInterface
      */
     public static function getPriority()
     {
-        return 95;
+        $defaultPriority = 95;
+        $configuration = $GLOBALS['TYPO3_CONF_VARS']['SYS']['locking']['redis'] ?? null;
+        if (is_array($configuration) && isset($configuration['priority'])) {
+            $priority = (int)$configuration['priority'];
+        } else {
+            $priority = $defaultPriority;
+        }
+        return $priority;
     }
 
     /**
