@@ -7,7 +7,7 @@
   "require": {
     "php": "^7.0",
     "ext-redis": "*",
-    "typo3/cms-core": ">=8.7.0,<10.0"
+    "typo3/cms-core": "^8.7 || ^9.5 || ^10.0 || ^11.0"
   },
   "extra": {
     "typo3/cms": {
@@ -18,5 +18,8 @@
     "psr-4": {
       "B13\\DistributedLocks\\": "src/"
     }
+  },
+  "config": {
+    "sort-packages": true
   }
 }
