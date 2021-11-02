@@ -107,8 +107,11 @@ class RedisLockingStrategy implements LockingStrategyInterface
     {
         $backend = new \Redis();
         $backend->connect($configuration['hostname'], (int)$configuration['port']);
-        if (!empty($configuration['authentication'])) {
-            $backend->auth($configuration['authentication']);
+        if (!empty($configuration['authentication']) && empty($configuration['password'])) {
+            $configuration['password'] = $configuration['authentication'];
+        }
+        if (!empty($configuration['password'])) {
+            $backend->auth($configuration['password']);
         }
         $backend->select((int)$configuration['database']);
         return $backend;
