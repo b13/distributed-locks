@@ -19,7 +19,7 @@ This extension is available for TYPO3 v8+ LTS, and requires the PHP package `php
 
 ## Installation
 
-Install this extension via composer `composer require b13/redis-locker` or extensions.typo3.org / Extension Manager,
+Install this extension via composer `composer require b13/distributed-locks` or extensions.typo3.org / Extension Manager,
 and activate it in the Extension Manager.
 
 Now add the following lines to your LocalConfiguration / AdditionalConfiguration to activate Redis Locking.
