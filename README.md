@@ -36,6 +36,13 @@ Other options:
     'password' (contains the password, necessary for secure authentication if required by redis)
     'priority' (numeric, default is 95) - Set priority for this locking strategy. See LockingApi documentation.
 
+## Disabling it in certain contextes
+
+If you have different `TYPO3_CONTEXT` or environments and you want to switch off the complete redis
+strategy (i.e. in your staging machine), you can set this in your LocalConfiguration / AdditionalConfiguration:
+
+    $GLOBALS['TYPO3_CONF_VARS']['SYS']['locking']['redis']['disabled'] = true;
+
 ## Future Development
 
 Should be switched to `symfony/lock` to allow distributed redis services and other lockers.
