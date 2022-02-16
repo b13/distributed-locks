@@ -89,9 +89,10 @@ class RedisLockingStrategy implements LockingStrategyInterface
             $this->ttl = (int)$configuration['ttl'];
         }
 
+        $redisKeyPrefix = sha1($GLOBALS['TYPO3_CONF_VARS']['SYS']['encryptionKey'] . '_REDIS_LOCKING');
         $this->subject = $subject;
-        $this->name = sprintf('lock:name:%s', $subject);
-        $this->mutexName = sprintf('lock:mutex:%s', $subject);
+        $this->name = sprintf('%s:lock:name:%s', $redisKeyPrefix, $subject);
+        $this->mutexName = sprintf('%s:lock:mutex:%s', $redisKeyPrefix, $subject);
         $this->value = uniqid();
 
         $this->backend = $this->connectBackend($configuration);
