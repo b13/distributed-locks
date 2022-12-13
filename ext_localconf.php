@@ -1,6 +1,6 @@
 <?php
 
-defined('TYPO3_MODE') or die();
+defined('TYPO3') or defined('TYPO3_MODE') or die();
 
 (function () {
     if (empty($GLOBALS['TYPO3_CONF_VARS']['SYS']['locking']['redis']['disabled'] ?? false)) {
