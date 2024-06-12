@@ -11,16 +11,24 @@ namespace B13\DistributedLocks;
  * of the License, or any later version.
  */
 
+use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+use TYPO3\CMS\Lowlevel\Event\ModifyBlindedConfigurationOptionsEvent;
+
 /**
  * Hook for $GLOBALS['TYPO3_CONF_VARS']['SC_OPTIONS'][\TYPO3\CMS\Lowlevel\Controller\ConfigurationController::class]['modifyBlindedConfigurationOptions']
  */
 class BlindedConfigurationOptionsHook
 {
+    #[AsEventListener]
+    public function __invoke(ModifyBlindedConfigurationOptionsEvent $event): void
+    {
+        $event->setBlindedConfigurationOptions(
+            $this->modifyBlindedConfigurationOptions($event->getBlindedConfigurationOptions())
+        );
+    }
+
     /**
      * Blind password in ConfigurationOptions
-     *
-     * @param array $blindedConfigurationOptions
-     * @return array
      */
     public function modifyBlindedConfigurationOptions(array $blindedConfigurationOptions): array
     {

@@ -11,6 +11,8 @@ namespace B13\DistributedLocks;
  * of the License, or any later version.
  */
 
+use Psr\Log\LoggerAwareInterface;
+use Psr\Log\LoggerAwareTrait;
 use TYPO3\CMS\Core\Locking\Exception\LockAcquireException;
 use TYPO3\CMS\Core\Locking\Exception\LockAcquireWouldBlockException;
 use TYPO3\CMS\Core\Locking\Exception\LockCreateException;
@@ -19,53 +21,47 @@ use TYPO3\CMS\Core\Locking\LockingStrategyInterface;
 /**
  * Locking Strategy based on \Redis
  */
-class RedisLockingStrategy implements LockingStrategyInterface
+class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInterface
 {
+    use LoggerAwareTrait;
+
     /**
-     * @var \Redis
+     * Default priority for this locking strategy
      */
-    private $backend;
+    private const DEFAULT_PRIORITY = 95;
+
+    private \Redis $backend;
 
     /**
      * The locking subject (e.g. "pagesection")
-     * @var string
      */
-    private $subject;
+    private string $subject;
 
     /**
      * The name of the lock
-     * @var string
      */
-    private $name;
+    private string $name;
 
     /**
      * The name for the mutex lock
-     * @var string
      */
-    private $mutexName;
+    private string $mutexName;
 
     /**
      * The value to store into Redis
-     *
-     * @var string
      */
-    private $value;
+    private string $value;
 
     /**
-     * @var boolean TRUE if lock is acquired by this locker
+     * TRUE if lock is acquired by this locker
      */
-    private $isAcquired = false;
+    private bool $isAcquired = false;
 
     /**
      * The max amount of time within the database for locking in seconds.
-     *
-     * @var int
      */
-    private $ttl = 30;
+    private int $ttl = 30;
 
-    /**
-     * @inheritdoc
-     */
     public function __construct($subject)
     {
         $configuration = $GLOBALS['TYPO3_CONF_VARS']['SYS']['locking']['redis'] ?? null;
@@ -100,9 +96,6 @@ class RedisLockingStrategy implements LockingStrategyInterface
 
     /**
      * Set up redis backend.
-     *
-     * @param $configuration
-     * @return \Redis
      */
     private function connectBackend($configuration): \Redis
     {
@@ -126,33 +119,23 @@ class RedisLockingStrategy implements LockingStrategyInterface
         $this->release();
     }
 
-    /**
-     * @inheritdoc
-     */
     public static function getCapabilities()
     {
         return self::LOCK_CAPABILITY_EXCLUSIVE | self::LOCK_CAPABILITY_NOBLOCK;
     }
 
-    /**
-     * @inheritdoc
-     */
-    public static function getPriority()
+    public static function getPriority(): int
     {
-        $defaultPriority = 95;
         $configuration = $GLOBALS['TYPO3_CONF_VARS']['SYS']['locking']['redis'] ?? null;
         if (is_array($configuration) && isset($configuration['priority'])) {
             $priority = (int)$configuration['priority'];
         } else {
-            $priority = $defaultPriority;
+            $priority = self::DEFAULT_PRIORITY;
         }
         return $priority;
     }
 
-    /**
-     * @inheritdoc
-     */
-    public function acquire($mode = self::LOCK_CAPABILITY_EXCLUSIVE)
+    public function acquire($mode = self::LOCK_CAPABILITY_EXCLUSIVE): bool
     {
         if ($this->isAcquired) {
             return true;
@@ -184,9 +167,6 @@ class RedisLockingStrategy implements LockingStrategyInterface
         return $this->isAcquired;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function release()
     {
         if (!$this->isAcquired) {
@@ -198,17 +178,11 @@ class RedisLockingStrategy implements LockingStrategyInterface
         return !$this->isAcquired;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function destroy()
     {
         $this->release();
     }
 
-    /**
-     * @inheritdoc
-     */
     public function isAcquired()
     {
         return $this->isAcquired;
@@ -218,19 +192,27 @@ class RedisLockingStrategy implements LockingStrategyInterface
      * Try to lock in the Redis backend
      *
      * @param bool $blocking whether the lock is set or not
-     * @return boolean TRUE on success, FALSE otherwise
+     * @return bool TRUE on success, FALSE otherwise
      */
     private function lock(bool $blocking = true): bool
     {
-        // option NX: set value if key is not present
-        $result = (bool)$this->backend->set($this->name, $this->value, ['NX', 'EX' => $this->ttl]);
-        // Non blocking, but the current request is the same, you're fine.
-        if (!$blocking && !$result) {
-            if ($this->backend->get($this->name) === $this->value) {
-                return true;
+        try {
+            // option NX: set value if key is not present
+            $result = (bool)$this->backend->set($this->name, $this->value, ['NX', 'EX' => $this->ttl]);
+            // Non-blocking, but the current request is the same, you're fine.
+            if (!$blocking && !$result) {
+                if ($this->backend->get($this->name) === $this->value) {
+                    return true;
+                }
             }
+            return $result;
+        } catch (\Throwable $e) {
+            $this->logger->critical('Could not lock in Redis', [
+                'message' => $e->getMessage(),
+                'exception' => $e,
+            ]);
         }
-        return $result;
+        return false;
     }
 
     /**
@@ -239,14 +221,21 @@ class RedisLockingStrategy implements LockingStrategyInterface
      * See "blPop" (pop the blocking entry based on the ttl). Can probably hardened
      * by using "blPush" and "blPop" in the future.
      *
-     * @return string The popped value, FALSE on timeout
+     * @return string|false The popped value, FALSE on timeout
      */
-    private function wait()
+    private function wait(): string|false
     {
-        $blockingTo = max(1, $this->backend->ttl($this->name));
-        $result = $this->backend->blPop([$this->mutexName], $blockingTo);
-
-        return is_array($result) ? $result[1] : false;
+        try {
+            $blockingTo = max(1, $this->backend->ttl($this->name));
+            $result = $this->backend->blPop([$this->mutexName], $blockingTo);
+            return is_array($result) ? $result[1] : false;
+        } catch (\Throwable $e) {
+            $this->logger->critical('Failure while waiting on redis', [
+                'message' => $e->getMessage(),
+                'exception' => $e,
+            ]);
+        }
+        return false;
     }
 
     /**
@@ -255,7 +244,7 @@ class RedisLockingStrategy implements LockingStrategyInterface
      *
      * Thanks to Alexander Miehe <alexander.miehe@tourstream.eu>
      *
-     * @return boolean TRUE on success, FALSE otherwise
+     * @return bool TRUE on success, FALSE otherwise
      */
     private function unlockAndSignal(): bool
     {
