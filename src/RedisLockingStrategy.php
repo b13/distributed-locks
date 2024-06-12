@@ -100,14 +100,32 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
     private function connectBackend($configuration): \Redis
     {
         $backend = new \Redis();
-        $backend->connect($configuration['hostname'], (int)$configuration['port']);
+        $host = $configuration['hostname'];
+        $port = (int)$configuration['port'];
+        $connectionTimeout = (float)($configuration['connectionTimeout'] ?? 0.0);
+        $database = (int)$configuration['database'];
+
+        if (($configuration['persistentConnection'] ?? false)) {
+            $backend->pconnect(
+                $host,
+                $port,
+                $connectionTimeout,
+                $database
+            );
+        } else {
+            $backend->connect(
+                $host,
+                $port,
+                $connectionTimeout
+            );
+        }
         if (!empty($configuration['authentication']) && empty($configuration['password'])) {
             $configuration['password'] = $configuration['authentication'];
         }
         if (!empty($configuration['password'])) {
             $backend->auth($configuration['password']);
         }
-        $backend->select((int)$configuration['database']);
+        $backend->select($database);
         return $backend;
     }
 
@@ -248,13 +266,21 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
      */
     private function unlockAndSignal(): bool
     {
-        $script = '
+        try {
+            $script = '
             if (redis.call("GET", KEYS[1]) == ARGV[1]) and (redis.call("DEL", KEYS[1]) == 1) then
                 return redis.call("RPUSH", KEYS[2], ARGV[1]) and redis.call("EXPIRE", KEYS[2], ARGV[2])
             else
                 return 0
             end
         ';
-        return (bool)$this->backend->eval($script, [$this->name, $this->mutexName, $this->value, $this->ttl], 2);
+            return (bool)$this->backend->eval($script, [$this->name, $this->mutexName, $this->value, $this->ttl], 2);
+        } catch (\Throwable $e) {
+            $this->logger->critical('Failure while unlocking in Redis', [
+                'message' => $e->getMessage(),
+                'exception' => $e,
+            ]);
+        }
+    }
     }
 }
