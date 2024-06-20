@@ -11,5 +11,4 @@ defined('TYPO3') or die();
 
     // Can be removed once TYPO3 v11 support is dropped
     $GLOBALS['TYPO3_CONF_VARS']['SC_OPTIONS'][\TYPO3\CMS\Lowlevel\Controller\ConfigurationController::class]['modifyBlindedConfigurationOptions'][] = \B13\DistributedLocks\BlindedConfigurationOptionsHook::class;
-
 })();

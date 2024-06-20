@@ -137,7 +137,7 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
         $this->release();
     }
 
-    public static function getCapabilities()
+    public static function getCapabilities(): int
     {
         return self::LOCK_CAPABILITY_EXCLUSIVE | self::LOCK_CAPABILITY_NOBLOCK;
     }
@@ -170,9 +170,8 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
                 // N.B. we do this in a loop because between
                 // wait() and lock() another process may acquire the lock
                 while (!$this->isAcquired = $this->lock()) {
-
                     // this blocks till the lock gets released or timeout is reached
-                    if (!$this->wait()) {
+                    if ($this->wait() === null) {
                         throw new LockAcquireException('Could not acquire exclusive lock (blocking+exclusive).',
                             1561445710);
                     }
@@ -185,7 +184,7 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
         return $this->isAcquired;
     }
 
-    public function release()
+    public function release(): bool
     {
         if (!$this->isAcquired) {
             return true;
@@ -193,15 +192,15 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
         // Even in an error, the release is locked
         $this->unlockAndSignal();
         $this->isAcquired = false;
-        return !$this->isAcquired;
+        return true;
     }
 
-    public function destroy()
+    public function destroy(): void
     {
         $this->release();
     }
 
-    public function isAcquired()
+    public function isAcquired(): bool
     {
         return $this->isAcquired;
     }
@@ -239,21 +238,21 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
      * See "blPop" (pop the blocking entry based on the ttl). Can probably hardened
      * by using "blPush" and "blPop" in the future.
      *
-     * @return string|false The popped value, FALSE on timeout
+     * @return string|null The popped value, null on timeout
      */
-    private function wait(): string|false
+    private function wait(): ?string
     {
         try {
             $blockingTo = max(1, $this->backend->ttl($this->name));
             $result = $this->backend->blPop([$this->mutexName], $blockingTo);
-            return is_array($result) ? $result[1] : false;
+            return $result[1] ?? null;
         } catch (\Throwable $e) {
             $this->logger->critical('Failure while waiting on redis', [
                 'message' => $e->getMessage(),
                 'exception' => $e,
             ]);
         }
-        return false;
+        return null;
     }
 
     /**
@@ -281,6 +280,6 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
                 'exception' => $e,
             ]);
         }
-    }
+        return false;
     }
 }
