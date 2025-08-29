@@ -92,6 +92,7 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
         $this->value = uniqid();
 
         $this->backend = $this->connectBackend($configuration);
+        $this->logger = GeneralUtility::makeInstance(Logger::class, '');
     }
 
     /**
