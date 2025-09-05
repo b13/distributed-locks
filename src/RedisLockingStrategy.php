@@ -17,6 +17,8 @@ use TYPO3\CMS\Core\Locking\Exception\LockAcquireException;
 use TYPO3\CMS\Core\Locking\Exception\LockAcquireWouldBlockException;
 use TYPO3\CMS\Core\Locking\Exception\LockCreateException;
 use TYPO3\CMS\Core\Locking\LockingStrategyInterface;
+use TYPO3\CMS\Core\Log\LogManager;
+use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
  * Locking Strategy based on \Redis
@@ -92,6 +94,7 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
         $this->value = uniqid();
 
         $this->backend = $this->connectBackend($configuration);
+        $this->logger = GeneralUtility::makeInstance(LogManager::class)->getLogger(__CLASS__);
     }
 
     /**
