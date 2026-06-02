@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace B13\DistributedLocks;
@@ -97,7 +98,7 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
     /**
      * Set up redis backend.
      */
-    private function connectBackend($configuration): \Redis
+    private function connectBackend(array $configuration): \Redis
     {
         $backend = new \Redis();
         $host = $configuration['hostname'];
@@ -110,20 +111,18 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
                 $host,
                 $port,
                 $connectionTimeout,
-                $database
+                (string)$database,
             );
         } else {
             $backend->connect(
                 $host,
                 $port,
-                $connectionTimeout
+                $connectionTimeout,
             );
         }
-        if (!empty($configuration['authentication']) && empty($configuration['password'])) {
-            $configuration['password'] = $configuration['authentication'];
-        }
-        if (!empty($configuration['password'])) {
-            $backend->auth($configuration['password']);
+        $authentication = $this->getAuthentication($configuration);
+        if ($authentication !== null) {
+            $backend->auth($authentication);
         }
         $backend->select($database);
         return $backend;
@@ -281,5 +280,24 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
             ]);
         }
         return false;
+    }
+
+    /**
+     * Build the authentication value based on the configuration, returning an associative array
+     * in case `username` and `password` or `password` if only password has been configured.
+     * Return `null` to indicate no-authentication configuration, which is also possible to be used with `redis`.
+     */
+    private function getAuthentication($configuration): ?array
+    {
+        return match (true) {
+            empty($configuration['username']) && !empty($configuration['password']) => [
+                (string)$configuration['password'],
+            ],
+            !empty($configuration['username']) && !empty($configuration['password']) => [
+                (string)$configuration['username'],
+                (string)$configuration['password'],
+            ],
+            default => null,
+        };
     }
 }
