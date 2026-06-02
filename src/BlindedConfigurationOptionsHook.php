@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace B13\DistributedLocks;
@@ -23,7 +24,7 @@ class BlindedConfigurationOptionsHook
     public function __invoke(ModifyBlindedConfigurationOptionsEvent $event): void
     {
         $event->setBlindedConfigurationOptions(
-            $this->modifyBlindedConfigurationOptions($event->getBlindedConfigurationOptions())
+            $this->modifyBlindedConfigurationOptions($event->getBlindedConfigurationOptions()),
         );
     }
 
