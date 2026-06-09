@@ -67,16 +67,22 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
     {
         $configuration = $GLOBALS['TYPO3_CONF_VARS']['SYS']['locking']['redis'] ?? null;
         if (!is_array($configuration)) {
-            throw new LockCreateException('No configuration for Redis Locking Strategy found. Please configure the redis locking properly',
-                1561444886);
+            throw new LockCreateException(
+                'No configuration for Redis Locking Strategy found. Please configure the redis locking properly',
+                1561444886
+            );
         }
         if (!isset($configuration['hostname'])) {
-            throw new LockCreateException('No hostname for Redis Locking Strategy found. Please adapt your configuration.',
-                1561444887);
+            throw new LockCreateException(
+                'No hostname for Redis Locking Strategy found. Please adapt your configuration.',
+                1561444887
+            );
         }
         if (!isset($configuration['database'])) {
-            throw new LockCreateException('No database for Redis Locking Strategy found. Please adapt your configuration.',
-                1561444888);
+            throw new LockCreateException(
+                'No database for Redis Locking Strategy found. Please adapt your configuration.',
+                1561444888
+            );
         }
 
         if (!isset($configuration['port'])) {
@@ -161,8 +167,10 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
             if ($mode & self::LOCK_CAPABILITY_NOBLOCK) {
                 // try to acquire the lock - non-blocking
                 if (!$this->isAcquired = $this->lock(false)) {
-                    throw new LockAcquireWouldBlockException('Could not acquire exclusive lock (non-blocking).',
-                        1561445651);
+                    throw new LockAcquireWouldBlockException(
+                        'Could not acquire exclusive lock (non-blocking).',
+                        1561445651
+                    );
                 }
             } else {
                 // try to acquire the lock - blocking
@@ -171,8 +179,10 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
                 while (!$this->isAcquired = $this->lock()) {
                     // this blocks till the lock gets released or timeout is reached
                     if ($this->wait() === null) {
-                        throw new LockAcquireException('Could not acquire exclusive lock (blocking+exclusive).',
-                            1561445710);
+                        throw new LockAcquireException(
+                            'Could not acquire exclusive lock (blocking+exclusive).',
+                            1561445710
+                        );
                     }
                 }
             }
