@@ -15,14 +15,15 @@ This extension provides a Redis Locking mechanism to store the locks in a (share
 
 ## Requirements
 
-This extension is available for TYPO3 v8+ LTS, and requires the PHP package `php-redis` as well as a Redis server.
+This extension supports TYPO3 v12.4, v13.4 and v14.3. It requires PHP 8.1+, the PHP extension
+`php-redis`, and a Redis server.
 
 ## Installation
 
 Install this extension via composer `composer require b13/distributed-locks` or extensions.typo3.org / Extension Manager,
 and activate it in the Extension Manager.
 
-Now add the following lines to your LocalConfiguration / AdditionalConfiguration to activate Redis Locking.
+Now add the following lines to `config/system/additional.php` to activate Redis Locking.
 
     $GLOBALS['TYPO3_CONF_VARS']['SYS']['locking']['redis'] = [
         'hostname' => '127.0.0.1',
@@ -40,7 +41,7 @@ Other options:
 ## Disabling it in certain contextes
 
 If you have different `TYPO3_CONTEXT` or environments and you want to switch off the complete redis
-strategy (i.e. in your staging machine), you can set this in your LocalConfiguration / AdditionalConfiguration:
+strategy (i.e. in your staging machine), you can set this in `config/system/additional.php`:
 
     $GLOBALS['TYPO3_CONF_VARS']['SYS']['locking']['redis']['disabled'] = true;
 
