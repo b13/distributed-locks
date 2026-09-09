@@ -14,9 +14,12 @@ namespace B13\DistributedLocks;
 
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use TYPO3\CMS\Core\Locking\Exception\LockAcquireException;
 use TYPO3\CMS\Core\Locking\Exception\LockAcquireWouldBlockException;
 use TYPO3\CMS\Core\Locking\Exception\LockCreateException;
+use TYPO3\CMS\Core\Locking\FileLockStrategy;
 use TYPO3\CMS\Core\Locking\LockingStrategyInterface;
 use TYPO3\CMS\Core\Log\LogManager;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
@@ -33,7 +36,36 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
      */
     private const DEFAULT_PRIORITY = 95;
 
-    private \Redis $backend;
+    /**
+     * Time in seconds an unreachable Redis server is not contacted again within the same PHP process.
+     */
+    private const CONNECTION_RETRY_INTERVAL = 30;
+
+    /**
+     * Time of the last failed connection attempt, shared by all locks of this PHP process, so a
+     * request does not run into the connection timeout again for every single lock it creates.
+     */
+    private static ?float $connectionFailureTime = null;
+
+    /**
+     * The Redis connection, NULL if the Redis server is not available (see $fallbackStrategy)
+     */
+    private ?\Redis $backend = null;
+
+    /**
+     * Used instead of Redis while the Redis server is unavailable. NULL means "no locking at all".
+     */
+    private ?LockingStrategyInterface $fallbackStrategy = null;
+
+    /**
+     * The configuration of $GLOBALS['TYPO3_CONF_VARS']['SYS']['locking']['redis']
+     */
+    private array $configuration;
+
+    /**
+     * Whether an unavailable Redis server should be survived instead of throwing an exception
+     */
+    private bool $gracefulDegradation;
 
     /**
      * The locking subject (e.g. "pagesection")
@@ -95,13 +127,32 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
         }
 
         $redisKeyPrefix = sha1($GLOBALS['TYPO3_CONF_VARS']['SYS']['encryptionKey'] . '_REDIS_LOCKING');
+        $this->configuration = $configuration;
+        $this->gracefulDegradation = (bool)($configuration['gracefulDegradation'] ?? true);
         $this->subject = $subject;
         $this->name = sprintf('%s:lock:name:%s', $redisKeyPrefix, $subject);
         $this->mutexName = sprintf('%s:lock:mutex:%s', $redisKeyPrefix, $subject);
         $this->value = uniqid();
 
-        $this->backend = $this->connectBackend($configuration);
-        $this->logger = GeneralUtility::makeInstance(LogManager::class)->getLogger(__CLASS__);
+        if ($this->gracefulDegradation && self::hasRecentConnectionFailure()) {
+            // The Redis server was unreachable a moment ago, do not wait for the connection timeout again
+            $this->fallbackStrategy = $this->createFallbackStrategy();
+            return;
+        }
+
+        try {
+            $this->backend = $this->connectBackend($configuration);
+            self::$connectionFailureTime = null;
+        } catch (\Throwable $e) {
+            if (!$this->gracefulDegradation) {
+                throw new LockCreateException(
+                    'Could not connect to the Redis server for locking: ' . $e->getMessage(),
+                    1788393600,
+                    $e
+                );
+            }
+            $this->handleRedisFailure('Could not connect to Redis for locking', $e);
+        }
     }
 
     /**
@@ -181,7 +232,8 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
                 // wait() and lock() another process may acquire the lock
                 while (!$this->isAcquired = $this->lock()) {
                     // this blocks till the lock gets released or timeout is reached
-                    if ($this->wait() === null) {
+                    // if Redis went away while waiting, the next lock() uses the fallback strategy
+                    if ($this->wait() === null && $this->backend !== null) {
                         throw new LockAcquireException(
                             'Could not acquire exclusive lock (blocking+exclusive).',
                             1561445710
@@ -201,15 +253,19 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
         if (!$this->isAcquired) {
             return true;
         }
+        $this->isAcquired = false;
+        if ($this->backend === null) {
+            return $this->fallbackStrategy?->release() ?? true;
+        }
         // Even in an error, the release is locked
         $this->unlockAndSignal();
-        $this->isAcquired = false;
         return true;
     }
 
     public function destroy(): void
     {
         $this->release();
+        $this->fallbackStrategy?->destroy();
     }
 
     public function isAcquired(): bool
@@ -225,6 +281,9 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
      */
     private function lock(bool $blocking = true): bool
     {
+        if ($this->backend === null) {
+            return $this->lockWithFallback($blocking);
+        }
         try {
             // option NX: set value if key is not present
             $result = (bool)$this->backend->set($this->name, $this->value, ['NX', 'EX' => $this->ttl]);
@@ -235,13 +294,35 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
                 }
             }
             return $result;
+        } catch (\RedisException $e) {
+            $this->handleRedisFailure('Could not lock in Redis', $e);
+            if ($this->backend === null) {
+                return $this->lockWithFallback($blocking);
+            }
         } catch (\Throwable $e) {
-            $this->logger->critical('Could not lock in Redis', [
+            $this->logger()->critical('Could not lock in Redis', [
                 'message' => $e->getMessage(),
                 'exception' => $e,
             ]);
         }
         return false;
+    }
+
+    /**
+     * Acquire the lock without Redis, either via the configured fallback strategy or - if there is
+     * none - by not locking at all. The latter may result in the same page being generated by
+     * several processes in parallel, which is still better than a broken website.
+     */
+    private function lockWithFallback(bool $blocking): bool
+    {
+        if ($this->fallbackStrategy === null) {
+            return true;
+        }
+        return $this->fallbackStrategy->acquire(
+            $blocking
+                ? self::LOCK_CAPABILITY_EXCLUSIVE
+                : self::LOCK_CAPABILITY_EXCLUSIVE | self::LOCK_CAPABILITY_NOBLOCK
+        );
     }
 
     /**
@@ -258,8 +339,10 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
             $blockingTo = max(1, $this->backend->ttl($this->name));
             $result = $this->backend->blPop([$this->mutexName], $blockingTo);
             return $result[1] ?? null;
+        } catch (\RedisException $e) {
+            $this->handleRedisFailure('Failure while waiting on redis', $e);
         } catch (\Throwable $e) {
-            $this->logger->critical('Failure while waiting on redis', [
+            $this->logger()->critical('Failure while waiting on redis', [
                 'message' => $e->getMessage(),
                 'exception' => $e,
             ]);
@@ -286,13 +369,92 @@ class RedisLockingStrategy implements LockingStrategyInterface, LoggerAwareInter
             end
         ';
             return (bool)$this->backend->eval($script, [$this->name, $this->mutexName, $this->value, $this->ttl], 2);
+        } catch (\RedisException $e) {
+            $this->handleRedisFailure('Failure while unlocking in Redis', $e);
         } catch (\Throwable $e) {
-            $this->logger->critical('Failure while unlocking in Redis', [
+            $this->logger()->critical('Failure while unlocking in Redis', [
                 'message' => $e->getMessage(),
                 'exception' => $e,
             ]);
         }
         return false;
+    }
+
+    /**
+     * The Redis server is not available (anymore): log the problem and - unless graceful degradation
+     * has been switched off - continue with the fallback strategy for this and all further locks of
+     * this PHP process, instead of letting a Redis outage take down the whole website.
+     */
+    private function handleRedisFailure(string $message, \Throwable $e): void
+    {
+        $this->logger()->critical($message, [
+            'message' => $e->getMessage(),
+            'exception' => $e,
+        ]);
+        if (!$this->gracefulDegradation) {
+            return;
+        }
+        $this->backend = null;
+        self::$connectionFailureTime = microtime(true);
+        $this->fallbackStrategy = $this->createFallbackStrategy();
+    }
+
+    /**
+     * Create the locking strategy to use while Redis is unavailable, by default TYPO3's
+     * FileLockStrategy. Set the option "fallbackStrategy" to NULL to run without any locking
+     * in that case. Returns NULL if no (usable) fallback strategy is available.
+     */
+    private function createFallbackStrategy(): ?LockingStrategyInterface
+    {
+        $className = $this->configuration['fallbackStrategy'] ?? FileLockStrategy::class;
+        if (empty($className)) {
+            return null;
+        }
+        try {
+            if (!is_string($className) || !is_subclass_of($className, LockingStrategyInterface::class)) {
+                throw new LockCreateException(
+                    'The configured fallback locking strategy does not implement the LockingStrategyInterface.',
+                    1788393601
+                );
+            }
+            if (($className::getCapabilities() & self::getCapabilities()) !== self::getCapabilities()) {
+                throw new LockCreateException(
+                    'The configured fallback locking strategy "' . $className . '" does not provide the required capabilities.',
+                    1788393602
+                );
+            }
+            return new $className($this->subject);
+        } catch (\Throwable $e) {
+            $this->logger()->critical('Could not create the fallback locking strategy, continuing without locking', [
+                'message' => $e->getMessage(),
+                'exception' => $e,
+            ]);
+        }
+        return null;
+    }
+
+    private static function hasRecentConnectionFailure(): bool
+    {
+        return self::$connectionFailureTime !== null
+            && (microtime(true) - self::$connectionFailureTime) < self::CONNECTION_RETRY_INTERVAL;
+    }
+
+    /**
+     * LockFactory instantiates locking strategies via "new" instead of makeInstance(), so the
+     * logger is never injected - fetch it lazily, otherwise logging a Redis problem would end in
+     * "Call to a member function critical() on null".
+     */
+    private function logger(): LoggerInterface
+    {
+        if ($this->logger === null) {
+            try {
+                $this->logger = GeneralUtility::makeInstance(LogManager::class)->getLogger(static::class);
+            } catch (\Throwable) {
+                // Locking may be used very early in the bootstrap process, where this is not available yet
+                $this->logger = new NullLogger();
+            }
+        }
+        return $this->logger;
     }
 
     /**
