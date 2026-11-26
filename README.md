@@ -15,7 +15,7 @@ This extension provides a Redis Locking mechanism to store the locks in a (share
 
 ## Requirements
 
-This extension supports TYPO3 v12.4, v13.4 and v14.3. It requires PHP 8.1+, the PHP extension
+This extension supports TYPO3 v12.4, v13.4, v14.3 and v15. It requires PHP 8.1+, the PHP extension
 `php-redis`, and a Redis server.
 
 ## Installation

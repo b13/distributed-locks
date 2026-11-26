@@ -7,7 +7,7 @@ services:
   # Registered explicitly instead of via the #[AsEventListener] attribute:
   # TYPO3\CMS\Core\Attribute\AsEventListener only exists since TYPO3 v13, and the
   # Symfony attribute of the same name is not autoconfigured by TYPO3 at all.
-  # The service tag works identically on TYPO3 v12, v13 and v14.
+  # The service tag works identically on TYPO3 v12 to v15.
   B13\DistributedLocks\BlindedConfigurationOptionsHook:
     tags:
       - name: event.listener
